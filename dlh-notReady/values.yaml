@@ -1,0 +1,116 @@
+# 全局變數
+global:
+  environment: dev
+  namePrefix: "Darren"
+  extraEnv:
+    - name: COMMON_VAR
+      value: "global-value"
+  # VaultSecret 整合，可參考 vault-agent-injector 方式
+
+# Airflow 設定
+airflow:
+  fullnameOverride: "{{ .Values.global.namePrefix }}-airflow-{{ .Values.global.environment }}"
+  executor: CeleryExecutor
+  # 預設 admin 帳號資訊由 Vault Secret 傳入
+  secrets:
+    vaultSecretName: "{{ .Values.airflow.fullnameOverride }}-vs"
+  # Broker URL 透過 secret 注入，參考 vault 整合設定
+  config:
+    brokerUrlSecret: "rabbitmq-secret"
+  # Metadata Database 使用 Postgres
+  metadataDatabase:
+    connection: postgresql://airflow:$(POSTGRES_PASSWORD)@{{ include "postgresql.fullname" . }}:5432/airflow
+  # Connection 設定，包含 spark 與 minio connection
+  extraConnections:
+    - id: spark_default
+      conn_type: spark
+      host: spark-master
+      extra: |
+        {"spark.master": "spark://spark-master:7077", "spark.submit.deployMode": "cluster"}
+    - id: minio_conn
+      conn_type: s3
+      login: minioadmin
+      password: admin
+      host: "{{ .Values.minio.fullnameOverride }}"
+      extra: >
+        {"endpoint_url": "http://{{ .Values.minio.fullnameOverride }}:9000", "verify": false}
+  # DAG 與 Remote Log 設定
+  dags:
+    persistence:
+      enabled: true
+      existingClaim: "airflow-dags-pvc"
+    configMapMounts:
+      - name: spark-defaults
+        configMap: spark-defaults-configmap
+  remoteLogging: true
+  remoteLogConnection: "minio-log"
+  logging:
+    remote_base_log_folder: "s3://log/"
+  # 新增 sidecar: 使用 aws-cli image 定時同步 platform bucket 上的 dag 檔案到 /opt/dags/minio/
+  sidecars:
+    - name: dag-syncer
+      image: amazon/aws-cli
+      imagePullPolicy: IfNotPresent
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          while true; do
+            aws s3 sync s3://platform/ /opt/dags/minio/ --endpoint-url http://{{ .Values.minio.fullnameOverride }}:9000;
+            sleep 60;
+          done
+      volumeMounts:
+        - name: dags-volume
+          mountPath: /opt/dags/minio
+
+# Postgres (Bitnami PostgreSQL) 設定
+postgresql:
+  fullnameOverride: "{{ .Values.global.namePrefix }}-postgresql-{{ .Values.global.environment }}"
+  replicaCount: 3
+  persistence:
+    enabled: true
+    storageClass: ""
+    volumePermissions:
+      enabled: true
+  persistenceMultiPVC:
+    - claimName: "postgresql-ssd1"
+    - claimName: "postgresql-ssd2"
+    - claimName: "postgresql-ssd3"
+
+# RabbitMQ (Bitnami) 設定
+rabbitmq:
+  fullnameOverride: "{{ .Values.global.namePrefix }}-rabbitmq-{{ .Values.global.environment }}"
+  replicaCount: 3
+  secrets:
+    vaultSecretName: "{{ .Values.rabbitmq.fullnameOverride }}-vs"
+  extraConfiguration: |
+    default_vhost = ggdada
+  persistence:
+    enabled: true
+    storageClass: ""
+  persistenceMultiPVC:
+    - claimName: "rabbitmq-ssd1"
+    - claimName: "rabbitmq-ssd2"
+    - claimName: "rabbitmq-ssd3"
+
+# MinIO 設定 (Bitnami)
+minio:
+  fullnameOverride: "{{ .Values.global.namePrefix }}-minio-{{ .Values.global.environment }}"
+  mode: standalone
+  buckets:
+    - name: platform
+      policy: readonly
+    - name: log
+      policy: readwrite
+
+# Spark 設定 (Bitnami)
+spark:
+  fullnameOverride: "{{ .Values.global.namePrefix }}-spark-{{ .Values.global.environment }}"
+  master:
+    replicaCount: 1
+  worker:
+    replicaCount: 2
+
+# Vault Secret 相關設定，將覆蓋各組件的機敏資料
+secrets:
+  vault:
+    enabled: true
