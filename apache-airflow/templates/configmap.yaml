@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.airflowCust.fullnameOverride }}-env-overrided-cm
+data:
+  AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://postgres:postgres@poc-pg-ha-dev-fz1-pgpool:5432/airflow
+  AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+  AIRFLOW__CORE__FERNET_KEY: prevenAutoGenerate
+#   AIRFLOW__CELERY__BROKER_URL: redis://:mypassword@redis-service:6379/0
+#   AIRFLOW__WEBSERVER__SECRET_KEY: your_webserver_secret_key_here

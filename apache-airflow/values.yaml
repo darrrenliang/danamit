@@ -1,0 +1,151 @@
+global:
+  failZone: fz1
+  environment: dev
+  namePrefix: "Darren"
+  # extraEnv:
+  #   - name: COMMON_VAR
+  #     value: "global-value"
+
+airflowCust:
+  # fullnameOverride: "{{ .Values.global.namePrefix }}-airflow-{{ .Values.global.environment }}-{{ .Values.global.failZone }}"
+  fullnameOverride: "poc-airflow-dev-fz1"
+  useStandardNaming: true
+  nodeSelector: {}
+  tolerations: []
+  revisionHistoryLimit: 1
+  airflowPodAnnotations: {}
+  executor: "CeleryExecutor"
+  extraEnvFrom: |
+    - configMapRef:
+        name: '{{ .Values.fullnameOverride }}-env-overrided-cm'
+# - secretRef:
+#     name: '{{ .Values.fullnameOverride }}-metadata-secret'
+  workers:
+    replicas: 1
+    persistence:
+      enabled: false
+    resources:
+      limits:
+        cpu: 100m
+        memory: 128Mi
+      requests:
+        cpu: 250m
+        memory: 256Mi
+    podManagementPolicy: OrderedReady
+  scheduler:
+    replicas: 1
+    resources:
+      limits:
+        cpu: 100m
+        memory: 128Mi
+      requests:
+        cpu: 500m
+        memory: 256Mi
+  migrateDatabaseJob:
+    enabled: true
+    resources:
+      limits:
+        cpu: 100m
+        memory: 128Mi
+      requests:
+        cpu: 500m
+        memory: 256Mi
+  apiServer:
+    resources:
+      limits:
+        cpu: 100m
+        memory: 128Mi
+      requests:
+        cpu: 500m
+        memory: 256Mi
+  webserver:
+    enabled: true
+    replicas: 1
+    resources:
+      limits:
+        cpu: 100m
+        memory: 128Mi
+      requests:
+        cpu: 500m
+        memory: 256Mi
+    defaultUser:
+      enabled: false
+    extraInitContainers:
+      - name: create-admin-user
+        image: apache/airflow:2.8.1
+        command:
+          - bash
+          - -c
+          - |
+            airflow db upgrade
+            airflow users create \
+              --username "$AIRFLOW_ADMIN_USERNAME" \
+              --password "$AIRFLOW_ADMIN_PASSWORD" \
+              --firstname Admin \
+              --lastname User \
+              --role Admin \
+              --email "$AIRFLOW_ADMIN_EMAIL"
+        extraEnvFrom:
+          - secretRef:
+              name: '{{ .Values.fullnameOverride }}-admin-secret'
+  triggerer:
+    enabled: true
+    resources:
+      limits:
+        cpu: 100m
+        memory: 128Mi
+      requests:
+        cpu: 500m
+        memory: 256Mi
+  dagProcessor:
+    enabled: true
+    replicas: 1
+    resources:
+      limits:
+        cpu: 100m
+        memory: 128Mi
+      requests:
+        cpu: 500m
+        memory: 256Mi
+  statsd:
+    enabled: true
+    resources:
+      limits:
+        cpu: 100m
+        memory: 128Mi
+      requests:
+        cpu: 500m
+        memory: 256Mi
+  pgbouncer:
+    enabled: false
+    replicas: 1
+    resources:
+      limits:
+        cpu: 100m
+        memory: 128Mi
+      requests:
+        cpu: 500m
+        memory: 256Mi
+    metricsExporterSidecar:
+      resources:
+        limits:
+          cpu: 100m
+          memory: 128Mi
+        requests:
+          cpu: 500m
+          memory: 256Mi
+      sslmode: "disable"
+  redis:
+    enabled: true
+    resources:
+      limits:
+        cpu: 100m
+        memory: 128Mi
+      requests:
+        cpu: 500m
+        memory: 256Mi
+    persistence:
+      enabled: true
+      size: 256Mi
+  postgresql:
+    enabled: false
