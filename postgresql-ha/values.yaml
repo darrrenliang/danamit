@@ -1,0 +1,78 @@
+# Postgres (Bitnami PostgreSQL) 設定
+global:
+  failZone: fz1
+  environment: dev
+  namePrefix: "Darren"
+  # extraEnv:
+  #   - name: COMMON_VAR
+  #     value: "global-value"
+
+postgresCust:
+  # fullnameOverride: "{{ .Values.global.namePrefix }}-postgresql-{{ .Values.global.environment }}-{{ .Values.global.failZone }}"
+  fullnameOverride: "poc-pg-ha-dev-fz1"
+  postgresql:
+    image:
+      registry: docker.io
+      repository: bitnami/postgresql-repmgr
+      tag: 17.4.0-debian-12-r10
+    replicaCount: 3
+    nodeSelector: {}
+    tolerations: []
+    podAnnotations: {}
+    resources:
+      requests:
+        cpu: 500m
+        memory: 256Mi
+      limits:
+        cpu: 1
+        memory: 512Mi
+    persistence:
+      enabled: true
+      size: 256Mi
+    # extraEnvVarsSecret: "{{ .Values.fullnameOverride }}-secret"
+    extraEnvVarsSecret: "poc-pg-ha-dev-fz1-secret"
+    usePgRewind: true
+    syncReplication: true
+    podManagementPolicy: OrderedReady # Parallel
+    extraEnvVars:
+      - name: REPMGRD_START_DELAY
+        value: "10"  # 等 10 秒再啟動 repmgrd
+  audit:
+    maxConnections: "200"
+  pgpool:
+    image:
+      registry: docker.io
+      repository: bitnami/pgpool
+      tag: 4.6.0-debian-12-r2
+    customUsers:
+      usernames: "admin01,user01"
+      passwords: "admin01,pass01"
+    resources:
+      requests:
+        cpu: 250m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+  metrics:
+    enabled: true
+    image:
+      registry: docker.io
+      repository: bitnami/postgres-exporter
+      tag: 0.17.1-debian-12-r2
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 250m
+        memory: 256Mi
+
+  # postgresql:
+  #   fullnameOverride: "{{ .Values.global.namePrefix }}-postgresql-{{ .Values.global.environment }}-{{ .Values.global.failZone }}"
+  #   replicaCount: 3
+  #   persistence:
+  #     enabled: true
+  #     storageClass: ""
+  #     volumePermissions:
+  #       enabled: true

@@ -1,0 +1,8 @@
+# Helm Chart dependencies directory
+*/charts/
+
+# Helm packaged chart files
+*.tgz
+
+# Helm lock file
+*.lock
