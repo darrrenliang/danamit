@@ -1,0 +1,26 @@
+apiVersion: v2
+name: darren-umbrella
+description: >
+  Umbrella Helm chart for deploying the Darren project.
+  This chart deploys Airflow, Postgres, RabbitMQ, MinIO, and Spark
+  with best practices, including HA, proper storage classes, secrets management,
+  remote logging configuration, and additional sidecars.
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+dependencies:
+  - name: airflow
+    version: "1.16.0"         # 請調整為正確版本
+    repository: "https://airflow.apache.org"
+  - name: postgresql-ha
+    version: "15.3.8"
+    repository: "https://charts.bitnami.com/bitnami"
+  - name: rabbitmq
+    version: "15.4.1"
+    repository: "https://charts.bitnami.com/bitnami"
+  - name: minio
+    version: "16.0.1"
+    repository: "https://charts.bitnami.com/bitnami"
+  - name: spark
+    version: "9.3.6"
+    repository: "https://charts.bitnami.com/bitnami"
