@@ -1,5 +1,11 @@
 # Postgresql-ha
 
+### Services
+- poc-pg-ha-dev-fz1-pgpool: 提供應用程式連線用（pgpool 會自動轉流量）
+- poc-pg-ha-dev-fz1-postgresql: 每個 Pod 的 ClusterIP，用於內部連線（可直接連主）
+- poc-pg-ha-dev-fz1-postgresql-headless: StatefulSet 專用，Pod 可以彼此溝通
+- poc-pg-ha-dev-fz1-postgresql-metrics: 用來讓 Prometheus 收集 PostgreSQL metrics 的
+
 ### PODS Architecture (After Initialization) 
   
 - PODS: `poc-pg-ha-dev-fz1-postgresql-0 poc-pg-ha-dev-fz1-postgresql-1 poc-pg-ha-dev-fz1-postgresql-2`
@@ -75,3 +81,4 @@ psql -Upostgres -dpostgres -h poc-pg-ha-dev-fz1-postgresql-0.poc-pg-ha-dev-fz1-p
 - master or slave 狀態會被記錄在pvc --> 下掉deployment時建議刪除pvc, 否則重新上線會壞掉
 - `podManagementPolicy` 可以設定OrderedReady，會一個完成後才建立下一個節點
 - `REPMGRD_START_DELAY` env 可以控制等 ？ 秒再啟動 repmgrd，檢查其他節點是否可以replication
+  
