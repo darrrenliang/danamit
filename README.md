@@ -8,7 +8,7 @@
 
 ## Helm
 
-### Apply
+### Apply extraEnv across all pods from the global section.
 Helm Chart 的 global 設定區塊統一定義 extraEnv
 
 - ❌ 但這寫法會錯！Helm 不允許在 values.yaml 裡用 template 語法。
