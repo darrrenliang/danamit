@@ -1,0 +1,40 @@
+# 登入介面與 API 的帳號密碼
+rootUser: "admin"
+rootPassword: "adminadmin"
+
+# 本地部署通常只需要 1 個節點
+mode: standalone
+
+# 持久化儲存設定
+persistence:
+  enabled: true
+  size: 1Gi
+
+# 服務類型 (本地測試建議用 NodePort)
+service:
+  port: 9000
+  consolePort: 32000
+
+# 資源限制 (避免吃掉太多本地電腦資源)
+resources:
+  requests:
+    memory: 256Mi
+    cpu: 100m
+
+## List of buckets to be created after minio install
+##
+buckets:
+  # Name of the bucket
+  - name: airflow
+    # Policy to be set on the
+    # bucket [none|download|upload|public]
+    policy: none
+    # Purge if bucket exists already
+    purge: false
+    # set versioning for
+    # bucket [true|false]
+    versioning: false # remove this key if you do not want versioning feature
+    # set objectlocking for
+    # bucket [true|false] NOTE: versioning is enabled by default if you use locking
+    objectlocking: false
+  

@@ -1,0 +1,234 @@
+myAirflow:
+  # Provide a name to substitute for the full names of resources
+  fullnameOverride: "airflow-dev-fz1"
+
+  # Use standard naming for all resources using airflow.fullname template
+  useStandardNaming: true
+
+  # Airflow executor
+  executor: "LocalExecutor"
+
+  # Extra envFrom 'items' that will be added to the definition of airflow containers
+  # A string is expected (templated).
+  # extraEnvFrom:
+  #   - secretRef: { name: airflow-dev-fz1-admin-secret }
+
+  # Volumes for all airflow containers
+  volumes: 
+    - name: dags-data
+      emptyDir:
+        medium: Memory
+        sizeLimit: 2Gi
+
+  # VolumeMounts for all airflow containers
+  volumeMounts:
+    - name: dags-data
+      mountPath: /opt/airflow/dags
+
+  # Airflow database & redis config
+  data:
+    metadataConnection:
+      user: postgres
+      pass: postgres
+      protocol: postgresql
+      host: postgresql-dev-fz1
+      port: 5432
+      db: airflow
+      sslmode: disable
+
+
+  # Airflow Worker Config
+  workers:
+    # Number of airflow celery workers in StatefulSet
+    replicas: 1
+    # Max number of old replicasets to retain
+    revisionHistoryLimit: 1
+    resources: 
+      limits:
+        cpu: 200m
+        memory: 256Mi
+      requests:
+        cpu: 100m
+        memory: 128Mi
+    # Grace period for tasks to finish after SIGTERM is sent from kubernetes
+    terminationGracePeriodSeconds: 30
+    logGroomerSidecar:
+      # Whether to deploy the Airflow worker log groomer sidecar.
+      enabled: true
+      # Number of days to retain logs
+      retentionDays: 1
+      # frequency to attempt to groom logs, in minutes
+      frequencyMinutes: 15
+      resources: 
+        limits:
+          cpu: 200m
+          memory: 256Mi
+        requests:
+          cpu: 100m
+          memory: 128Mi
+    waitForMigrations:
+      # Whether to create init container to wait for db migrations
+      enabled: true
+    persistence:
+      # Enable persistent volumes
+      enabled: false
+
+  # Airflow scheduler settings
+  scheduler:
+    resources: 
+      limits:
+        cpu: 200m
+        memory: 256Mi
+      requests:
+        cpu: 100m
+        memory: 128Mi
+    waitForMigrations:
+      # Whether to create init container to wait for db migrations
+      enabled: true
+    logGroomerSidecar:
+      # Whether to deploy the Airflow worker log groomer sidecar.
+      enabled: true
+      # Number of days to retain logs
+      retentionDays: 1
+      # frequency to attempt to groom logs, in minutes
+      frequencyMinutes: 15
+      resources: 
+        limits:
+          cpu: 200m
+          memory: 256Mi
+        requests:
+          cpu: 100m
+          memory: 128Mi
+
+  # Configuration for postgresql subchart
+  # Not recommended for production
+  postgresql:
+    enabled: false
+
+  # Airflow database migration job settings
+  migrateDatabaseJob:
+    enabled: true
+    # Limit the lifetime of the job object after it finished execution.
+    ttlSecondsAfterFinished: 120
+    resources:
+      limits:
+        cpu: 200m
+        memory: 256Mi
+      requests:
+        cpu: 100m
+        memory: 128Mi
+    # In case you need to disable the helm hooks that create the jobs after install.
+    # Disable this if you are using ArgoCD for example
+    useHelmHooks: false
+    applyCustomEnv: false
+
+  # Airflow webserver settings
+  webserver:
+    enabled: true
+    replicas: 1
+    resources:
+      limits:
+        cpu: 200m
+        memory: 256Mi
+      requests:
+        cpu: 100m
+        memory: 128Mi
+    defaultUser:
+      enabled: false
+    extraInitContainers:
+      - name: create-admin-user
+        image: apache/airflow:2.10.5
+        command:
+          - bash
+          - -c
+          - |
+            airflow db upgrade
+            airflow users create \
+              --username "$AIRFLOW_ADMIN_USERNAME" \
+              --password "$AIRFLOW_ADMIN_PASSWORD" \
+              --firstname Admin \
+              --lastname User \
+              --role Admin \
+              --email "$AIRFLOW_ADMIN_EMAIL"
+        envFrom:
+          - secretRef: { name: airflow-dev-fz1-admin-secret }
+    waitForMigrations:
+        # Whether to create init container to wait for db migrations
+        enabled: true
+    
+  # Airflow Triggerer Config
+  triggerer:
+    enabled: true
+    resources:
+      limits:
+        cpu: 200m
+        memory: 256Mi
+      requests:
+        cpu: 100m
+        memory: 128Mi
+    persistence:
+      # Enable persistent volumes
+      enabled: false
+      
+  # Airflow Dag Processor Config
+  dagProcessor:
+    enabled: true
+    resources:
+      limits:
+        cpu: 200m
+        memory: 256Mi
+      requests:
+        cpu: 100m
+        memory: 128Mi
+    # Launch additional containers into dag processor (templated).
+    extraInitContainers:
+      - name: create-minio-connection
+        image: apache/airflow:2.10.5
+        imagePullPolicy: IfNotPresent
+        envFrom:
+          - secretRef: { name: airflow-dev-fz1-metadata-secret }
+        command: ["/bin/bash", "-c"]
+        args:
+          - |
+            airflow connections add 'minio_conn' \
+            --conn-type 'aws' \
+            --conn-extra '{"aws_access_key_id": "admin", "aws_secret_access_key": "adminadmin", "host": "http://minio.dev.svc.cluster.local:9000"}'
+      - name: initial-sync
+        image: amazon/aws-cli
+        envFrom:
+          - secretRef: { name: airflow-dev-fz1-minio-secret }
+        command: ["/bin/sh", "-c"]
+        args:
+          - "aws s3 sync s3://airflow/ /opt/airflow/dags/minio --delete --exact-timestamps"
+        volumeMounts:
+          - name: dags-data
+            mountPath: /opt/airflow/dags
+
+    # Sidecar: 接收 Webhook 並執行「YAML 預編譯」
+    extraContainers:
+      - name: s3-dag-sync
+        image: amazon/aws-cli
+        envFrom:
+          - secretRef: { name: airflow-dev-fz1-minio-secret }
+        command: ["/bin/sh", "-c"]
+        args: 
+          - |
+            while true; do
+              aws s3 sync s3://airflow/dags/ /opt/airflow/dags/minio --delete --exact-timestamps
+              echo "Sync complete at $(date)"
+              sleep 10
+            done
+        volumeMounts:
+          - name: dags-data
+            mountPath: /opt/airflow/dags
+    waitForMigrations:
+      # Whether to create init container to wait for db migrations
+      enabled: true
+  
+  config:
+    scheduler:
+      standalone_dag_processor: "True"
+      dag_dir_list_interval: 5      # 5 秒掃描一次目錄
+      min_file_process_interval: 0  # 檔案一變就解析
+      parsing_processes: 4          # 2000 個 DAG 建議開多核心解析
+        
