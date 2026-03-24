@@ -2,6 +2,8 @@ kubectl create namespace dev
 
 helm repo add minio https://charts.min.io/
 helm repo add bitnami https://charts.bitnami.com/bitnami
+helm repo add apache-airflow https://airflow.apache.org
+
 helm repo update
 
 helm install minio minio/minio \

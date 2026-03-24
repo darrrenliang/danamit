@@ -1,21 +1,17 @@
-# 鏡像設定
+fu
+
 image:
   repository: bitnamilegacy/postgresql
   tag: "17.6.0-debian-12-r4"
   pullPolicy: IfNotPresent
 
-# 副本數（單機版設為 1）
 replicaCount: 1
 
-# 資料庫核心設定
 auth:
-  # 這是你要的 Root User 與 Password
   postgresPassword: "postgres"
   username: "postgres"
-  # 預設建立的資料庫名稱
   database: "airflow"
 
-# 容器資源限制（防止資料庫吃光 Node 資源）
 resources:
   limits:
     cpu: 500m
@@ -24,14 +20,11 @@ resources:
     cpu: 250m
     memory: 256Mi
 
-# 網路服務設定
 service:
   type: ClusterIP
   port: 5432
-  # 如果要在 K8s 外部連線，可以改為 NodePort
   nodePort: 30432
 
-# 持久化存儲（非常重要，否則 Pod 重啟資料會消失）
 persistence:
   enabled: true
   mountPath: /var/lib/postgresql/data
@@ -39,13 +32,11 @@ persistence:
     - ReadWriteOnce
   size: 1Gi
 
-# 存活與就緒檢查 (Liveness/Readiness Probes)
 probes:
   enabled: true
   initialDelaySeconds: 30
   periodSeconds: 10
 
-# 額外的環境變數 (例如時區)
 extraEnvVars:
   - name: TZ
     value: "Asia/Taipei"
