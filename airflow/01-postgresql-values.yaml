@@ -1,0 +1,53 @@
+global:
+  security:
+    ## @param global.security.allowInsecureImages Allows skipping image verification
+    allowInsecureImages: true
+
+fullnameOverride: poc-01
+
+image:
+  repository: bitnamilegacy/postgresql
+  tag: "17.6.0-debian-12-r4"
+  pullPolicy: IfNotPresent
+
+replicaCount: 1
+
+auth:
+  postgresPassword: "postgres"
+  username: "postgres"
+  database: "airflow"
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 250m
+    memory: 256Mi
+
+service:
+  type: ClusterIP
+  port: 5432
+  nodePort: 30432
+
+persistence:
+  enabled: true
+  mountPath: /var/lib/postgresql/data
+  accessModes:
+    - ReadWriteOnce
+  size: 1Gi
+
+probes:
+  enabled: true
+  initialDelaySeconds: 30
+  periodSeconds: 10
+
+extraEnvVars:
+  - name: TZ
+    value: "Asia/Taipei"
+  - name: PGDATA
+    value: /var/lib/postgresql/data/pgdata
+
+persistence:
+  annotations:
+    "helm.sh/resource-policy": delete

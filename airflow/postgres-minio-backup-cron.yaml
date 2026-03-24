@@ -1,0 +1,81 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: postgres-minio-backup
+spec:
+  schedule: "0 2 * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: backup-worker
+            image: aws-psql-client:latest
+            imagePullPolicy: Never
+            env:
+            - name: PG_HOST
+              value: "poc-01.dev.svc.cluster.local"
+            - name: PG_USER
+              value: "postgres"
+            - name: PG_DB
+              value: "airflow"
+            - name: AWS_ENDPOINT_URL
+              value: "http://minio.dev.svc.cluster.local:9000"
+            - name: BUCKET_NAME
+              value: "airflow"
+            - name: PGPASSWORD
+              value: "postgres"
+              # valueFrom:
+              #   secretKeyRef:
+              #     name: backup-creds
+              #     key: POSTGRES_PASSWORD
+            - name: AWS_ACCESS_KEY_ID
+              value: "admin"
+              # valueFrom:
+              #   secretKeyRef:
+              #     name: backup-creds
+              #     key: MINIO_ACCESS_KEY
+            - name: AWS_SECRET_ACCESS_KEY
+              value: "adminadmin"
+              # valueFrom:
+              #   secretKeyRef:
+              #     name: backup-creds
+              #     key: MINIO_SECRET_KEY
+            command:
+            - /bin/bash
+            - -c
+            - |
+              set -e              
+
+              echo "Testing connection to $PG_HOST..."
+              pg_isready -h $PG_HOST -p 5432 -U $PG_USER
+              
+              # (postgres-backups/2026-03-25/backup.sql.gz)
+              BACKUP_DATE=$(date +%Y-%m-%d)
+              BACKUP_FILE="backup-$(date +%H%M%S).sql.gz"
+              TARGET_S3_PATH="s3://$BUCKET_NAME/$BACKUP_DATE/$BACKUP_FILE"
+              
+              echo "Starting full backup to $TARGET_S3_PATH..."
+              pg_dump -h $PG_HOST -U $PG_USER $PG_DB | gzip | \
+              aws s3 cp - $TARGET_S3_PATH
+              echo "Backup uploaded successfully."
+              
+              if date --version >/dev/null 2>&1; then
+                  # GNU date (Debian/Ubuntu)
+                  RETENTION_LIMIT=$(date -d "7 days ago" +%Y-%m-%d)
+              else
+                  # BusyBox date (Alpine)
+                  RETENTION_LIMIT=$(date -d "@$(($(date +%s) - 604800))" +%Y-%m-%d)
+              fi
+
+              echo "Retention check: Searching for folders older than $RETENTION_LIMIT..."
+              aws s3 ls s3://$BUCKET_NAME/ | grep "PRE " | awk '{print $2}' | while read -r line; do
+                  folder_name=${line%/}
+                  if [[ "$folder_name" < "$RETENTION_LIMIT" ]]; then
+                      echo "Deleting expired backup folder: $folder_name"
+                      aws s3 rm s3://$BUCKET_NAME/$folder_name --recursive
+                  fi
+              done
+              
+              echo "Backup workflow completed successfully."
+          restartPolicy: OnFailure

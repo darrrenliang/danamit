@@ -1,4 +1,9 @@
-fu
+global:
+  security:
+    ## @param global.security.allowInsecureImages Allows skipping image verification
+    allowInsecureImages: true
+
+fullnameOverride: poc-02
 
 image:
   repository: bitnamilegacy/postgresql
@@ -42,3 +47,7 @@ extraEnvVars:
     value: "Asia/Taipei"
   - name: PGDATA
     value: /var/lib/postgresql/data/pgdata
+
+persistence:
+  annotations:
+    "helm.sh/resource-policy": delete
