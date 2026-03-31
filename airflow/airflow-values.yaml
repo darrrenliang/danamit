@@ -1,0 +1,362 @@
+# Provide a name to substitute for the full names of resources
+fullnameOverride: "airflow-dev-fz1"
+
+# Use standard naming for all resources using airflow.fullname template
+useStandardNaming: true
+
+# Airflow executor
+executor: "LocalExecutor"
+
+# Extra env 'items' that will be added to the definition of airflow containers
+# a string is expected (templated).
+# TODO: difference from `env`? This is a templated string. Probably should template `env` and remove this.
+extraEnv::
+  - name: AIRFLOW_CONN_MINIO_CONN
+    value: "aws://$AWS_ACCESS_KEY_ID:$AWS_SECRET_ACCESS_KEY@?endpoint_url=$AWS_ENDPOINT_URL"
+
+# Extra envFrom 'items' that will be added to the definition of airflow containers
+# A string is expected (templated).
+extraEnvFrom: |
+  - configMapRef: { name: airflow-dev-fz1-minio-configmap }
+
+# Extra envFrom 'items' that will be added to the definition of airflow containers
+# A string is expected (templated).
+# extraEnvFrom:
+#   - secretRef: { name: airflow-dev-fz1-admin-secret }
+
+# Volumes for all airflow containers
+volumes: 
+  - name: dags-data
+    emptyDir:
+      medium: Memory
+      sizeLimit: 128Mi
+
+# VolumeMounts for all airflow containers
+volumeMounts:
+  - name: dags-data
+    mountPath: /opt/airflow/dags
+
+# Extra secrets that will be managed by the chart
+# (You can use them with extraEnv or extraEnvFrom or some of the extraVolumes values).
+# The format for secret data is "key/value" where
+#    * key (templated) is the name of the secret that will be created
+#    * value: an object with the standard 'data' or 'stringData' key (or both).
+#          The value associated with those keys must be a string (templated)
+extraSecrets:
+  'airflow-dev-fz1-metadata-secret':
+    type: Opaque
+    data: |
+      connection: '{{ "postgresql://postgres:postgres@airflow-dev-fz1-pgbouncer:6543/airflow-metadata" | b64enc }}'
+
+# Extra ConfigMaps that will be managed by the chart
+# (You can use them with extraEnv or extraEnvFrom or some of the extraVolumes values).
+# The format for configmap data is "key/value" where
+#    * key (templated) is the name of the configmap that will be created
+#    * value: an object with the standard 'data' key.
+#          The value associated with this keys must be a string (templated)
+extraConfigMaps: 
+  'airflow-dev-fz1-admin-configmap':
+    data: |
+      AIRFLOW_ADMIN_USERNAME: admin
+      AIRFLOW_ADMIN_PASSWORD: admin
+      AIRFLOW_ADMIN_EMAIL: admin@example.com
+  'airflow-dev-fz1-minio-configmap':
+    data: |
+      AWS_ACCESS_KEY_ID: admin
+      AWS_SECRET_ACCESS_KEY: adminadmin
+      AWS_ENDPOINT_URL: http://minio.dev.svc.cluster.local:9000
+
+# Airflow database & redis config
+data:
+  # If secret names are provided, use those secrets
+  # These secrets must be created manually, eg:
+  #
+  # kind: Secret
+  # apiVersion: v1
+  # metadata:
+  #   name: custom-airflow-metadata-secret
+  # type: Opaque
+  # data:
+  #   connection: base64_encoded_connection_string
+  metadataSecretName: airflow-dev-fz1-metadata-secret
+  # Otherwise pass connection values in
+  metadataConnection:
+    user: postgres
+    pass: postgres
+    protocol: postgresql
+    host: poc-01.dev.svc.cluster.local
+    port: 5432
+    db: airflow
+    sslmode: disable
+
+
+# Airflow Worker Config
+workers:
+  # Number of airflow celery workers in StatefulSet
+  replicas: 1
+  # Max number of old replicasets to retain
+  revisionHistoryLimit: 1
+  resources: 
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+  # Grace period for tasks to finish after SIGTERM is sent from kubernetes
+  terminationGracePeriodSeconds: 10
+  logGroomerSidecar:
+    # Whether to deploy the Airflow worker log groomer sidecar.
+    enabled: true
+    # Number of days to retain logs
+    retentionDays: 1
+    # frequency to attempt to groom logs, in minutes
+    frequencyMinutes: 15
+    resources: 
+      limits:
+        cpu: 200m
+        memory: 256Mi
+      requests:
+        cpu: 100m
+        memory: 128Mi
+  waitForMigrations:
+    # Whether to create init container to wait for db migrations
+    enabled: true
+  persistence:
+    # Enable persistent volumes
+    enabled: false
+
+# Airflow scheduler settings
+scheduler:
+  resources: 
+    limits:
+      cpu: 500m
+      memory: 1Gi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+  waitForMigrations:
+    # Whether to create init container to wait for db migrations
+    enabled: true
+  logGroomerSidecar:
+    # Whether to deploy the Airflow worker log groomer sidecar.
+    enabled: true
+    # Number of days to retain logs
+    retentionDays: 1
+    # frequency to attempt to groom logs, in minutes
+    frequencyMinutes: 15
+    resources: 
+      limits:
+        cpu: 200m
+        memory: 256Mi
+      requests:
+        cpu: 100m
+        memory: 128Mi
+  extraContainers:
+    - name: s3-dag-sync
+      image: amazon/aws-cli
+      envFrom:
+        - configMapRef: { name: airflow-dev-fz1-minio-configmap }
+      command: ["/bin/sh", "-c"]
+      args: 
+        - |
+          while true; do
+            aws s3 sync s3://airflow/dags/ /opt/airflow/dags/minio --delete --exact-timestamps --exclude "__pycache__/*" --exclude "*.pyc"
+            echo "Sync complete at $(date)"
+            sleep 10
+          done
+      volumeMounts:
+        - name: dags-data
+          mountPath: /opt/airflow/dags
+
+# Configuration for postgresql subchart
+# Not recommended for production
+postgresql:
+  enabled: false
+
+# # Airflow database migration job settings
+migrateDatabaseJob:
+  enabled: true
+  # Limit the lifetime of the job object after it finished execution.
+  ttlSecondsAfterFinished: 120
+  resources:
+    limits:
+      cpu: 500m
+      memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+  # In case you need to disable the helm hooks that create the jobs after install.
+  # Disable this if you are using ArgoCD for example
+  useHelmHooks: false
+  applyCustomEnv: false
+  # Add additional init containers into migrate database job (templated).
+  extraInitContainers:
+    - name: wait-for-pgbouncer
+      image: postgres:15-alpine
+      command:
+        - /bin/sh
+        - -c
+        - |
+          until pg_isready -h $PGHOST -p $PGPORT -U $PGDB; do
+            echo "Waiting for PgBouncer to accept connections..."
+            sleep 2
+          done
+      env:
+        - name: PGHOST
+          value: "airflow-dev-fz1-pgbouncer"
+        - name: PGPORT
+          value: "6543"
+        - name: PGDB
+          value: "postgres"
+
+# Airflow webserver settings
+webserver:
+  enabled: true
+  replicas: 1
+  resources:
+    limits:
+      cpu: 500m
+      memory: 1Gi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+  defaultUser:
+    enabled: false
+  extraInitContainers:
+    - name: create-admin-user
+      image: apache/airflow:2.10.5
+      command:
+        - bash
+        - -c
+        - |
+          airflow users create \
+            --username "$AIRFLOW_ADMIN_USERNAME" \
+            --password "$AIRFLOW_ADMIN_PASSWORD" \
+            --firstname Admin \
+            --lastname User \
+            --role Admin \
+            --email "$AIRFLOW_ADMIN_EMAIL"
+      envFrom:
+        - configMapRef: { name: airflow-dev-fz1-admin-configmap }
+      env:
+        - name: AIRFLOW__DATABASE__SQL_ALCHEMY_CONN
+          valueFrom:
+            secretKeyRef:
+              name: airflow-dev-fz1-metadata-secret
+              key: connection
+  waitForMigrations:
+    # Whether to create init container to wait for db migrations
+    enabled: true
+  
+# Airflow Triggerer Config
+triggerer:
+  enabled: false
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+  persistence:
+    # Enable persistent volumes
+    enabled: false
+  waitForMigrations:
+    # Whether to create init container to wait for db migrations
+    enabled: true
+    
+# Airflow Dag Processor Config
+dagProcessor:
+  enabled: true
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+  # Launch additional containers into dag processor (templated).
+  extraInitContainers:
+    # - name: create-minio-connection
+    #   image: apache/airflow:2.10.5
+    #   imagePullPolicy: IfNotPresent
+    #   envFrom:
+    #     - configMapRef: { name: airflow-dev-fz1-minio-configmap }
+    #   env:
+    #     - name: AIRFLOW__DATABASE__SQL_ALCHEMY_CONN
+    #       valueFrom:
+    #         secretKeyRef:
+    #           name: airflow-dev-fz1-metadata-secret
+    #           key: connection
+    #   command: ["/bin/bash", "-c"]
+    #   args:
+    #     - |
+    #       airflow connections add 'minio_conn' \
+    #       --conn-type 'aws' \
+    #       --conn-extra "{\"aws_access_key_id\": \"$AWS_ACCESS_KEY_ID\", \"aws_secret_access_key\": \"$AWS_SECRET_ACCESS_KEY\", \"host\": \"$AWS_ENDPOINT_URL\"}"
+          
+    #       airflow connections add 'minio_conn' \
+    #       --overwrite \
+    #       --conn-type 'aws' \
+    #       --conn-extra "{\"aws_access_key_id\": \"$AWS_ACCESS_KEY_ID\", \"aws_secret_access_key\": \"$AWS_SECRET_ACCESS_KEY\", \"host\": \"$AWS_ENDPOINT_URL\"}"
+          
+    - name: initial-sync
+      image: amazon/aws-cli
+      envFrom:
+        - configMapRef: { name: airflow-dev-fz1-minio-configmap }
+      command: ["/bin/sh", "-c"]
+      args:
+        - "aws s3 sync s3://airflow/ /opt/airflow/dags/minio --delete --exact-timestamps"
+      volumeMounts:
+        - name: dags-data
+          mountPath: /opt/airflow/dags
+  # Grace period for dag processor to finish after SIGTERM is sent from kubernetes
+  terminationGracePeriodSeconds: 10
+
+  extraContainers:
+    - name: s3-dag-sync
+      image: amazon/aws-cli
+      envFrom:
+        - configMapRef: { name: airflow-dev-fz1-minio-configmap }
+      command: ["/bin/sh", "-c"]
+      args: 
+        - |
+          while true; do
+            aws s3 sync s3://airflow/dags/ /opt/airflow/dags/minio --delete --exact-timestamps --exclude "__pycache__/*" --exclude "*.pyc"
+            echo "Sync complete at $(date)"
+            sleep 10
+          done
+      volumeMounts:
+        - name: dags-data
+          mountPath: /opt/airflow/dags
+  waitForMigrations:
+    # Whether to create init container to wait for db migrations
+    enabled: true
+# PgBouncer settings
+pgbouncer:
+  # Enable PgBouncer
+  enabled: true
+  # Number of PgBouncer replicas to run in Deployment
+  replicas: 1
+  # Args to use for PgBouncer(templated).
+  auth_type: md5
+  # Pool sizes
+  metadataPoolSize: 10
+  # Maximum clients that can connect to PgBouncer (higher = more file descriptors)
+  maxClientConn: 100
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+config:
+  scheduler:
+    standalone_dag_processor: "True"
+    dag_dir_list_interval: 5
+    min_file_process_interval: 0
+    parsing_processes: 4
+      

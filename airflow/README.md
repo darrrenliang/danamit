@@ -10,10 +10,6 @@ helm install minio minio/minio \
   --namespace dev \
   -f minio-values.yaml
 
-helm install postgresql bitnami/postgresql \
-  --namespace dev \
-  -f postgresql-values.yaml
-
 helm install postgresql-01 bitnami/postgresql \
 --namespace dev \
 -f 01-postgresql-values.yaml
@@ -59,3 +55,16 @@ SELECT * FROM app_schema.users;
 -- 退出 psql
 \q
 ```
+
+
+helm pull apache-airflow/airflow --version 1.19.0 
+
+helm install airflow apache-airflow/airflow  \
+--version 1.16.0 \
+--namespace dev \
+-f airflow-values.yaml
+
+helm template airflow apache-airflow/airflow  \
+--version 1.16.0 \
+--namespace dev \
+-f airflow-values.yaml > output.yaml
